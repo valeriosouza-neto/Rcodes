@@ -64,18 +64,35 @@ data$validity_classification <- NA
 for (i in 1:nrow(data)) {
   print(paste("Processing row:", i))
   
-  prompt <- paste(
-    "Classify the following research limitation according to Shadish et al.'s (2002) Four Validities framework, as applied in Clarke et al. (2023).",
-    "Choose only ONE of the following categories:",
-    "1 = External Validity (e.g., limited generalizability, sample issues, artificial settings)",
-    "2 = Construct Validity (e.g., poor measurement, overreliance on self-report, unclear operationalization)",
-    "3 = Internal Validity (e.g., confounds, third variables, unclear causal direction)",
-    "4 = Statistical Conclusion Validity (e.g., low statistical power, small sample, improper inference, p-hacking)",
-    "5 = No limitation is present.",
-    "6 = The limitation is unclear or cannot be identified.",
-    "Respond ONLY with a single number: 1, 2, 3, 4, 5, or 6.",
-    "Limitation: ", data$Limitation[i]
-  )
+prompt <- paste(
+  "Classify the following research limitation according to Shadish et al.'s (2002) Four Validities framework, as applied in Clarke et al. (2023).",
+  "",
+  "Use ONE of the following categories:",
+  "",
+  "1 = External Validity",
+  "   → Definition: The extent to which the results can be generalized to other people, settings, times, or measures.",
+  "   → Example threats: Non-representative samples, artificial settings, unrealistic stimuli, WEIRD samples.",
+  "",
+  "2 = Construct Validity",
+  "   → Definition: The degree to which variables accurately represent the theoretical constructs they are meant to measure or manipulate.",
+  "   → Example threats: Poor operational definitions, overreliance on self-report, short or unreliable scales.",
+  "",
+  "3 = Internal Validity",
+  "   → Definition: The degree to which a causal conclusion is warranted, considering the absence of confounds or alternative explanations.",
+  "   → Example threats: Confounding variables, unclear causal direction, third-variable problems.",
+  "",
+  "4 = Statistical Conclusion Validity",
+  "   → Definition: The accuracy of inferences made about the existence (or nonexistence) of relationships based on statistical evidence.",
+  "   → Example threats: Small sample sizes, low statistical power, misuse of significance testing, data dredging.",
+  "",
+  "5 = No limitation is present.",
+  "6 = The limitation is unclear or cannot be identified.",
+  "",
+  "Respond ONLY with a single number: 1, 2, 3, 4, 5, or 6.",
+  "",
+  "Limitation: ", data$Limitation[i]
+)
+
   
   result <- NA
   attempt <- 1
