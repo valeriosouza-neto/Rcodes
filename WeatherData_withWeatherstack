@@ -1,4 +1,4 @@
-# === STEP 0: Install required package ===
+# === STEP 0: Install required packages ===
 if (!require("httr")) install.packages("httr")
 if (!require("jsonlite")) install.packages("jsonlite")
 if (!require("lubridate")) install.packages("lubridate")
@@ -11,19 +11,19 @@ library(lubridate)
 library(dplyr)
 library(readr)
 
-# === STEP 1: Configuration ===
-api_key <- "YOUR_API_KEY"  # <-- Replace with your actual key
+# === STEP 1: Config ===
+api_key <- "YOUR_API_KEY"  # <-- Replace with your Weatherstack key
 location <- "Cairns"
 start_date <- as.Date("2022-01-01")
 end_date <- Sys.Date()
 
-# === STEP 2: Initialize storage ===
+# === STEP 2: Initialize empty dataframe ===
 weather_data <- data.frame()
 
-# === STEP 3: Loop over each day and fetch hourly data ===
+# === STEP 3: Loop over each day ===
 dates <- seq.Date(start_date, end_date, by = "day")
 
-cat("Fetching hourly weather data for Cairns from", start_date, "to", end_date, "\n")
+cat("📡 Fetching hourly historical weather for Cairns from", start_date, "to", end_date, "\n")
 
 for (date in dates) {
   cat("→", as.character(date), "\n")
@@ -42,25 +42,63 @@ for (date in dates) {
   
   if (!is.null(data_parsed$historical[[as.character(date)]]$hourly)) {
     hourly_data <- data_parsed$historical[[as.character(date)]]$hourly
+    loc <- data_parsed$location
     
-    df_day <- as.data.frame(hourly_data)
-    df_day$datetime <- ymd_h(paste(date, sprintf("%02d", as.numeric(df_day$time) %/% 100)))
-    df_day$location <- location
-    
-    weather_data <- bind_rows(weather_data, df_day)
+    # Process each hour
+    for (i in 1:nrow(hourly_data)) {
+      hour_entry <- hourly_data[i, ]
+      record <- data.frame(
+        datetime = ymd_h(paste(date, sprintf("%02d", as.numeric(hour_entry$time) %/% 100))),
+        location_name = loc$name,
+        country = loc$country,
+        region = loc$region,
+        localtime = loc$localtime,
+        temperature = hour_entry$temperature,
+        feelslike = hour_entry$feelslike,
+        humidity = hour_entry$humidity,
+        wind_speed = hour_entry$wind_speed,
+        wind_degree = hour_entry$wind_degree,
+        wind_dir = hour_entry$wind_dir,
+        pressure = hour_entry$pressure,
+        precip = hour_entry$precip,
+        cloudcover = hour_entry$cloudcover,
+        visibility = hour_entry$visibility,
+        heatindex = hour_entry$heatindex,
+        dewpoint = hour_entry$dewpoint,
+        windchill = hour_entry$windchill,
+        windgust = hour_entry$windgust,
+        chanceofrain = hour_entry$chanceofrain,
+        chanceofremdry = hour_entry$chanceofremdry,
+        chanceofwindy = hour_entry$chanceofwindy,
+        chanceofovercast = hour_entry$chanceofovercast,
+        chanceofsunshine = hour_entry$chanceofsunshine,
+        chanceoffrost = hour_entry$chanceoffrost,
+        chanceofhightemp = hour_entry$chanceofhightemp,
+        chanceoffog = hour_entry$chanceoffog,
+        chanceofsnow = hour_entry$chanceofsnow,
+        chanceofthunder = hour_entry$chanceofthunder,
+        uv_index = hour_entry$uv_index,
+        weather_desc = paste(hour_entry$weather_descriptions, collapse = ", "),
+        weather_icon = paste(hour_entry$weather_icons, collapse = ", ")
+      )
+      weather_data <- bind_rows(weather_data, record)
+    }
   } else {
-    warning(paste("No data for", date, "|", data_parsed$error$info))
+    warning(paste("⚠️ No data for", date, "|", data_parsed$error$info))
   }
   
-  Sys.sleep(1)  # avoid hitting rate limits
+  Sys.sleep(1)  # avoid API rate limits
 }
 
-# === STEP 4: Clean and reorder columns ===
-weather_data <- weather_data %>%
-  select(datetime, location, temperature, feelslike, humidity, wind_speed, wind_dir,
-         precip, cloudcover, visibility, pressure, weather_descriptions)
+# === STEP 4: Save to CSV with dynamic filename ===
+filename <- paste0(
+  tolower(gsub(" ", "_", location)),
+  "_hourly_weather_",
+  format(start_date, "%Y%m%d"), "_to_",
+  format(end_date, "%Y%m%d"),
+  "_all_fields.csv"
+)
 
-# === STEP 5: Save to CSV ===
-output_file <- "cairns_hourly_weather_2022_to_now.csv"
-write_csv(weather_data, output_file)
-cat("\n✅ Done! Data saved to:", output_file, "\n")
+write_csv(weather_data, filename)
+cat("✅ Full hourly historical weather saved to:", filename, "\n")
+
