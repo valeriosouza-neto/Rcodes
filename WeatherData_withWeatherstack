@@ -1,0 +1,66 @@
+# === STEP 0: Install required package ===
+if (!require("httr")) install.packages("httr")
+if (!require("jsonlite")) install.packages("jsonlite")
+if (!require("lubridate")) install.packages("lubridate")
+if (!require("dplyr")) install.packages("dplyr")
+if (!require("readr")) install.packages("readr")
+
+library(httr)
+library(jsonlite)
+library(lubridate)
+library(dplyr)
+library(readr)
+
+# === STEP 1: Configuration ===
+api_key <- "YOUR_API_KEY"  # <-- Replace with your actual key
+location <- "Cairns"
+start_date <- as.Date("2022-01-01")
+end_date <- Sys.Date()
+
+# === STEP 2: Initialize storage ===
+weather_data <- data.frame()
+
+# === STEP 3: Loop over each day and fetch hourly data ===
+dates <- seq.Date(start_date, end_date, by = "day")
+
+cat("Fetching hourly weather data for Cairns from", start_date, "to", end_date, "\n")
+
+for (date in dates) {
+  cat("→", as.character(date), "\n")
+  
+  url <- "http://api.weatherstack.com/historical"
+  response <- GET(url, query = list(
+    access_key = api_key,
+    query = location,
+    historical_date = as.character(date),
+    hourly = "1",
+    units = "m"
+  ))
+  
+  content_raw <- content(response, as = "text", encoding = "UTF-8")
+  data_parsed <- fromJSON(content_raw, flatten = TRUE)
+  
+  if (!is.null(data_parsed$historical[[as.character(date)]]$hourly)) {
+    hourly_data <- data_parsed$historical[[as.character(date)]]$hourly
+    
+    df_day <- as.data.frame(hourly_data)
+    df_day$datetime <- ymd_h(paste(date, sprintf("%02d", as.numeric(df_day$time) %/% 100)))
+    df_day$location <- location
+    
+    weather_data <- bind_rows(weather_data, df_day)
+  } else {
+    warning(paste("No data for", date, "|", data_parsed$error$info))
+  }
+  
+  Sys.sleep(1)  # avoid hitting rate limits
+}
+
+# === STEP 4: Clean and reorder columns ===
+weather_data <- weather_data %>%
+  select(datetime, location, temperature, feelslike, humidity, wind_speed, wind_dir,
+         precip, cloudcover, visibility, pressure, weather_descriptions)
+
+# === STEP 5: Save to CSV ===
+output_file <- "cairns_hourly_weather_2022_to_now.csv"
+write_csv(weather_data, output_file)
+cat("\n✅ Done! Data saved to:", output_file, "\n")
