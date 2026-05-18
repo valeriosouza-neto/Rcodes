@@ -1,0 +1,366 @@
+############################################################
+# INSTALL PACKAGES
+############################################################
+
+install.packages(c(
+  "httr2",
+  "dplyr",
+  "purrr",
+  "tibble",
+  "stringr",
+  "writexl"
+))
+
+############################################################
+# LOAD LIBRARIES
+############################################################
+
+library(httr2)
+library(dplyr)
+library(purrr)
+library(tibble)
+library(stringr)
+library(writexl)
+
+############################################################
+# API KEY
+############################################################
+
+api_key <- "ADD-HERE-YOUR-API-KEY" # CHANGE HERE YOUR API KEY
+
+############################################################
+# VIDEO LINKS
+############################################################
+
+video_links <- c(
+  "https://www.youtube.com/watch?v=4e5BEtlpBSA",
+  "https://www.youtube.com/watch?v=6UxcX7_QNnU",
+  "https://www.youtube.com/watch?v=Kn31ThTk9kQ"
+) # CHANGE THE LINKS
+
+############################################################
+# OUTPUT FILE
+############################################################
+
+output_file <- "FILE-NAME.xlsx" # CHANGE THE NAME OF THE FILE
+
+############################################################
+# EXTRACT VIDEO ID
+############################################################
+
+extract_video_id <- function(url) {
+  str_extract(url, "(?<=v=)[A-Za-z0-9_-]+")
+}
+
+############################################################
+# GENERIC YOUTUBE API FUNCTION
+############################################################
+
+youtube_get <- function(endpoint, query) {
+  
+  req <- request(
+    paste0("https://www.googleapis.com/youtube/v3/", endpoint)
+  ) |>
+    req_url_query(!!!query, key = api_key)
+  
+  resp <- req_perform(req)
+  
+  resp_body_json(resp, simplifyVector = FALSE)
+}
+
+############################################################
+# GET ALL REPLIES
+############################################################
+
+get_all_replies <- function(parent_comment_id) {
+  
+  page_token <- NULL
+  
+  all_replies <- tibble()
+  
+  repeat {
+    
+    query <- list(
+      part = "snippet",
+      parentId = parent_comment_id,
+      maxResults = 100,
+      textFormat = "plainText"
+    )
+    
+    if (!is.null(page_token)) {
+      query$pageToken <- page_token
+    }
+    
+    response <- tryCatch(
+      youtube_get("comments", query),
+      error = function(e) {
+        message("Reply error: ", e$message)
+        return(NULL)
+      }
+    )
+    
+    if (is.null(response)) break
+    
+    if (is.null(response$items)) break
+    
+    replies_df <- map_dfr(response$items, function(reply) {
+      
+      s <- reply$snippet
+      
+      tibble(
+        
+        row_type = "reply",
+        
+        comment_id = reply$id,
+        
+        parent_id = s$parentId,
+        
+        comment = s$textDisplay,
+        
+        user_name = s$authorDisplayName,
+        
+        author_channel_url = s$authorChannelUrl,
+        
+        author_profile_image = s$authorProfileImageUrl,
+        
+        author_channel_id =
+          ifelse(
+            is.null(s$authorChannelId$value),
+            NA,
+            s$authorChannelId$value
+          ),
+        
+        like_count = s$likeCount,
+        
+        viewer_rating = NA,
+        
+        total_reply_count = NA,
+        
+        date = s$publishedAt,
+        
+        published_at = s$publishedAt,
+        
+        updated_at = s$updatedAt
+      )
+    })
+    
+    all_replies <- bind_rows(
+      all_replies,
+      replies_df
+    )
+    
+    page_token <- response$nextPageToken
+    
+    if (is.null(page_token)) break
+  }
+  
+  all_replies
+}
+
+############################################################
+# GET COMMENTS
+############################################################
+
+get_comments <- function(video_id) {
+  
+  all_comments <- tibble(
+    
+    row_type = character(),
+    
+    video_id = character(),
+    
+    channel_id = character(),
+    
+    comment_id = character(),
+    
+    parent_id = character(),
+    
+    comment = character(),
+    
+    user_name = character(),
+    
+    author_channel_url = character(),
+    
+    author_profile_image = character(),
+    
+    author_channel_id = character(),
+    
+    like_count = numeric(),
+    
+    viewer_rating = character(),
+    
+    total_reply_count = numeric(),
+    
+    date = character(),
+    
+    published_at = character(),
+    
+    updated_at = character()
+  )
+  
+  page_token <- NULL
+  
+  repeat {
+    
+    query <- list(
+      part = "snippet",
+      videoId = video_id,
+      textFormat = "plainText",
+      maxResults = 100
+    )
+    
+    if (!is.null(page_token)) {
+      query$pageToken <- page_token
+    }
+    
+    response <- tryCatch(
+      youtube_get("commentThreads", query),
+      error = function(e) {
+        message(
+          "Error for video ",
+          video_id,
+          ": ",
+          e$message
+        )
+        return(NULL)
+      }
+    )
+    
+    if (is.null(response)) break
+    
+    if (is.null(response$items) ||
+        length(response$items) == 0) break
+    
+    comments_df <- map_dfr(
+      response$items,
+      function(item) {
+        
+        top <- item$snippet$topLevelComment$snippet
+        
+        top_comment_id <- item$snippet$topLevelComment$id
+        
+        top_comment <- tibble(
+          
+          row_type = "top_comment",
+          
+          video_id = video_id,
+          
+          channel_id = top$channelId,
+          
+          comment_id = top_comment_id,
+          
+          parent_id = NA,
+          
+          comment = top$textDisplay,
+          
+          user_name = top$authorDisplayName,
+          
+          author_channel_url = top$authorChannelUrl,
+          
+          author_profile_image =
+            top$authorProfileImageUrl,
+          
+          author_channel_id =
+            ifelse(
+              is.null(top$authorChannelId$value),
+              NA,
+              top$authorChannelId$value
+            ),
+          
+          like_count = top$likeCount,
+          
+          viewer_rating = top$viewerRating,
+          
+          total_reply_count =
+            item$snippet$totalReplyCount,
+          
+          date = top$publishedAt,
+          
+          published_at = top$publishedAt,
+          
+          updated_at = top$updatedAt
+        )
+        
+        replies_df <- tibble()
+        
+        if (item$snippet$totalReplyCount > 0) {
+          
+          replies_df <-
+            get_all_replies(top_comment_id)
+          
+          replies_df$video_id <- video_id
+          
+          replies_df$channel_id <- top$channelId
+        }
+        
+        bind_rows(
+          top_comment,
+          replies_df
+        )
+      }
+    )
+    
+    all_comments <- bind_rows(
+      all_comments,
+      comments_df
+    )
+    
+    message(
+      "Video ",
+      video_id,
+      ": collected ",
+      nrow(all_comments),
+      " rows so far."
+    )
+    
+    page_token <- response$nextPageToken
+    
+    Sys.sleep(1)
+    
+    if (is.null(page_token)) break
+  }
+  
+  all_comments
+}
+
+############################################################
+# EXTRACT VIDEO IDS
+############################################################
+
+video_ids <- extract_video_id(video_links)
+
+############################################################
+# SCRAPE COMMENTS
+############################################################
+
+comments_list <- map(
+  video_ids,
+  get_comments
+)
+
+############################################################
+# SHEET NAMES
+############################################################
+
+names(comments_list) <- paste0(
+  "video_",
+  seq_along(video_ids)
+)
+
+############################################################
+# EXPORT TO EXCEL
+############################################################
+
+write_xlsx(
+  comments_list,
+  output_file
+)
+
+############################################################
+# FINISHED
+############################################################
+
+message(
+  "Done. Excel file saved as: ",
+  output_file
+)
