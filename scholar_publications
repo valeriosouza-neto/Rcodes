@@ -1,0 +1,102 @@
+# -----------------------------------------
+# Step 0: Install and load required packages
+# -----------------------------------------
+install.packages(c("scholar", "dplyr", "stringr", "readxl", "curl", "openxlsx"), dependencies = TRUE)
+
+library(scholar)
+library(dplyr)
+library(stringr)
+library(readxl)
+library(curl)
+library(openxlsx)
+
+# -----------------------------------------
+# Step 1: Retrieve publications from Google Scholar
+# -----------------------------------------
+researcher_id <- "SnyJrWwAAAAJ"  # Change the researcher ID based on the Google Scholar profile URL.
+# For example, in the URL:
+# https://scholar.google.com/citations?user=eOFMJbMAAAAJ&hl=en&oi=ao
+# The researcher ID is the part after "?user=" and before any "&" (in this case, "eOFMJbMAAAAJ").
+
+publications <- get_publications(researcher_id)
+
+# Define lowercase the researchers name or variants of the author's name as it appears in the author list.
+# You can inspect a few entries from `publications$author` to find these.
+author_variants <- c("b moyle", "bd moyle")  # Add one name or more variants if needed (You will see on the Google scholar of the person)
+
+# -----------------------------------------
+# Step 2: Download and load the ABDC list
+# -----------------------------------------
+abdc_url <- "https://abdc.edu.au/wp-content/uploads/2026/05/ABDC-JQL-2025-v2-270526.xlsx"
+abdc_file <- tempfile(fileext = ".xlsx")
+
+curl_download(abdc_url, abdc_file)
+
+# Check sheet names if needed
+excel_sheets(abdc_file)
+
+# Read the 2025 JQL sheet
+# In this file, the real column names are on row 8, so skip 7 rows
+abdc <- read_excel(
+  abdc_file,
+  sheet = "2025 JQL",
+  skip = 7
+)
+
+# In the 2025 file, the relevant sheet is "2025 JQL"
+# The column names are on row 8, so skip the first 7 rows
+abdc <- read_excel(abdc_file, sheet = "2025 JQL", skip = 7)
+
+# -----------------------------------------
+# Step 3: Clean ABDC journal titles
+# -----------------------------------------
+abdc_clean <- abdc %>%
+  select(`Journal Title`, `2025 rating`) %>%
+  mutate(
+    journal_clean = str_to_lower(`Journal Title`),
+    journal_clean = str_squish(journal_clean),
+    `2025 rating` = str_squish(`2025 rating`)
+  ) %>%
+  select(journal_clean, `2025 rating`)
+
+# -----------------------------------------
+# Step 4: Clean and match journal titles in publication data
+# -----------------------------------------
+publications_clean <- publications %>%
+  mutate(
+    journal_clean = str_to_lower(journal),
+    journal_clean = str_squish(journal_clean)
+  )
+
+# -----------------------------------------
+# Step 5: Merge publication data with ABDC ratings
+# -----------------------------------------
+publications_ranked <- publications_clean %>%
+  left_join(abdc_clean, by = "journal_clean") %>%
+  mutate(`2025 rating` = ifelse(is.na(`2025 rating`), "Other", `2025 rating`))
+
+# -----------------------------------------
+# Step 6: Detect authorship position based on name variants
+# -----------------------------------------
+publications_ranked_final <- publications_ranked %>%
+  mutate(
+    authors = str_split(author, ",\\s*"),
+    author_position = sapply(authors, function(x) {
+      x_clean <- str_trim(str_to_lower(x))
+      pos <- which(x_clean %in% author_variants)
+      if (length(pos) == 0) return("Other")
+      if (pos == 1) return("1")
+      if (pos == 2) return("2")
+      if (pos == 3) return("3")
+      return("More")
+    }),
+    citations = cites
+  ) %>%
+  select(-cites, -authors) %>%
+  arrange(desc(year))  # Sort newest first
+
+# -----------------------------------------
+# Step 8: Export full data to Excel
+# -----------------------------------------
+write.xlsx(publications_ranked_final, file = "scholar_SnyJrWwAAAAJ_abdc_ranked_full_moyle.xlsx")
+
